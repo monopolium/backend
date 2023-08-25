@@ -260,6 +260,10 @@ func (t *Table) AddPlayer(p *Player) {
 		return
 	}
 
+	if _, ok := t.players[p.ID]; ok {
+		return
+	}
+
 	color := colors[rand.Intn(len(colors)-1)]
 	p.color = color
 	t.players[p.ID] = p

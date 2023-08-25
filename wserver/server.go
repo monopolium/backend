@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/websocket"
 )
 
@@ -16,7 +17,7 @@ const (
 	OnDisconnect
 )
 
-var upgrader = websocket.Upgrader{
+var Upgrader = websocket.Upgrader{
 	ReadBufferSize:   1024,
 	WriteBufferSize:  1024,
 	HandshakeTimeout: time.Second * 60,
@@ -37,15 +38,19 @@ type Settings struct {
 	// secret for jwt, pass an empty string if u don't use it
 	Secret []byte
 
+	// if true, Context.Get("token") will return token
+	UseJWT  bool
 	OnError OnErrorFunc
+	Claims  jwt.Claims
 }
 
 type Server struct {
 	OnError  OnErrorFunc
 	handlers map[interface{}]HandlerFunc
-
-	secret []byte
-	group  *Group
+	useJWT   bool
+	secret   []byte
+	claims   jwt.Claims
+	group    *Group
 }
 
 type Conn struct {
@@ -88,11 +93,16 @@ func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
 }
 
 func NewServer(s Settings) *Server {
-	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+	Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+	if s.UseJWT && len(s.Secret) < 1 {
+		panic("wserver: secret can not be empty string if UseJWT enabled")
+	}
 	serv := &Server{
+		useJWT:   s.UseJWT,
 		OnError:  s.OnError,
 		handlers: make(map[interface{}]HandlerFunc),
 		secret:   s.Secret,
+		claims:   s.Claims,
 	}
 	serv.group = &Group{s: serv, middleware: make([]MiddlewareFunc, 0, 1)}
 	return serv
@@ -140,11 +150,11 @@ func (s *Server) runHandler(h HandlerFunc, c *Context) {
 }
 
 // Accept accepts connection and runs reader and keeps connection alive
-func (s *Server) Accept(ws *websocket.Conn) {
+func (s *Server) Accept(ws *websocket.Conn, token *jwt.Token) {
 	conn := NewConn(ws)
-	s.onConnect(conn)
+	s.onConnect(conn, token)
 	go s.keepAlive(conn, PongTimeout)
-	go s.reader(conn)
+	go s.reader(conn, token)
 }
 
 func (s *Server) keepAlive(conn *Conn, timeout time.Duration) {
@@ -160,7 +170,7 @@ func (s *Server) keepAlive(conn *Conn, timeout time.Duration) {
 		}
 		time.Sleep((timeout * 9) / 10)
 		if time.Now().Sub(lastResponse) > timeout {
-			log.Printf("Ping don't get response, disconnecting to %s", conn.conn.LocalAddr())
+			log.Printf("Ping don't get response, disconnecting to %s \n", conn.conn.LocalAddr())
 			err = conn.Close()
 			if s.OnError != nil {
 				s.OnError(err, nil)
@@ -170,14 +180,16 @@ func (s *Server) keepAlive(conn *Conn, timeout time.Duration) {
 	}
 }
 
-func (s *Server) onConnect(conn *Conn) {
+func (s *Server) onConnect(conn *Conn, token *jwt.Token) {
 	ctx := NewContext(conn)
+	ctx.Set("token", token)
 	s.runOnConnectHandler(ctx)
 }
 
-func (s *Server) reader(conn *Conn) {
+func (s *Server) reader(conn *Conn, token *jwt.Token) {
 	for {
 		ctx := NewContext(conn)
+		ctx.Set("token", token)
 		_, msg, err := conn.conn.ReadMessage()
 		if err != nil {
 			s.OnError(err, ctx)
