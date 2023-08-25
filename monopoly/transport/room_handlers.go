@@ -1,14 +1,17 @@
 package transport
 
 import (
+	"embed"
 	"encoding/json"
 	"math/rand"
-	"os"
 	"strconv"
 
 	"github.com/nentenpizza/monopolium/monopoly"
 	"github.com/nentenpizza/monopolium/wserver"
 )
+
+//go:embed map.json
+var gmap embed.FS
 
 func (g *Game) OnCreateRoom(ctx *wserver.Context) error {
 	client := ctx.Get("client").(*Client)
@@ -24,7 +27,7 @@ func (g *Game) OnCreateRoom(ctx *wserver.Context) error {
 	roomID := strconv.Itoa(rand.Intn(10000000000))
 
 	var rawMap map[string]interface{}
-	f, err := os.ReadFile("./monopoly/map.json")
+	f, err := gmap.ReadFile("map.json")
 	if err != nil {
 		return err
 	}

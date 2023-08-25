@@ -15,9 +15,9 @@ var (
 )
 
 const (
-	timeoutDuration = time.Second
-	buyDuration     = time.Second
-	auctionDuration = time.Second
+	timeoutDuration = time.Second * 7
+	buyDuration     = time.Second * 2
+	auctionDuration = time.Second * 2
 
 	StateMoving  = "movingState"
 	StateTrading = "tradingState"
